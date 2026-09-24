@@ -9,31 +9,26 @@ Dataset: 32828 songs (on-demand 1xN similarity, no full NxN matrix)
 ------------------------------------------------------------
 INPUT SONG: Blinding Lights
 ----------------------------------------
-  Found 9 exact matches for 'Blinding Lights' by The Weeknd, Lucas Estrada (across 9 playlists).
-
-  Recommendations similar to 'Blinding Lights' by The Weeknd (exact match, 9 entry/ies):
-    1. Part-Time Lover - Dabin (Similarity: 0.9861, Genre: edm)
-    2. POP/STARS - K/DA (Similarity: 0.9835, Genre: pop)
-    3. Criminal - Framing Hanley (Similarity: 0.9787, Genre: rock)
-    4. Painkiller - DREAMERS (Similarity: 0.9783, Genre: pop)
-    5. It's All on U - T-Mass & LZRD Remix - ILLENIUM (Similarity: 0.9768, Genre: rap)
 
 Input Song: Blinding Lights
 Input Artist: The Weeknd
 Recommendations:
+  1. Part-Time Lover - Dabin (Similarity: 0.9861, Genre: edm)
+  2. POP/STARS - K/DA (Similarity: 0.9835, Genre: pop)
+  3. Criminal - Framing Hanley (Similarity: 0.9787, Genre: rock)
+  4. Painkiller - DREAMERS (Similarity: 0.9783, Genre: pop)
+  5. It's All on U - T-Mass & LZRD Remix - ILLENIUM (Similarity: 0.9768, Genre: rap)
 
 ------------------------------------------------------------
 INPUT SONG: Levitating
 ----------------------------------------
 
-  Recommendations similar to 'Levitating' by invention_ (exact match, 1 entry/ies):
-    1. Homesick - Kazam (Similarity: 0.9669, Genre: rap)
-    2. mello.w - .SØN (Similarity: 0.9447, Genre: r&b)
-    3. Caffè - Tears (Similarity: 0.9349, Genre: rap)
-    4. Reminisce - Howiewonder (Similarity: 0.9325, Genre: rap)
-    5. Back to Life - Sofasound (Similarity: 0.9245, Genre: rap)
-
 Input Song: Levitating
 Input Artist: invention_
 Recommendations:
+  1. Homesick - Kazam (Similarity: 0.9669, Genre: rap)
+  2. mello.w - .SØN (Similarity: 0.9447, Genre: r&b)
+  3. Caffè - Tears (Similarity: 0.9349, Genre: rap)
+  4. Reminisce - Howiewonder (Similarity: 0.9325, Genre: rap)
+  5. Back to Life - Sofasound (Similarity: 0.9245, Genre: rap)
 

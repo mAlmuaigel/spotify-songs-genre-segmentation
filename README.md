@@ -16,8 +16,8 @@ The dataset includes song metadata (track name, artist, album, release date, pop
 
 The script performs the following preprocessing steps:
 
-- **Missing value handling:** Rows missing essential fields (track_name, track_artist) are removed. Missing values in non-essential audio feature columns are filled with 0.
-- **Duplicate checking:** Duplicate rows are identified and reported.
+- **Missing value handling:** Rows missing essential fields (track_name, track_artist) are removed. Missing values in non-essential numeric audio feature columns are filled with 0.
+- **Duplicate checking:** Duplicate rows are identified and reported. Track IDs that appear in multiple playlists are also reported separately — this is legitimate (the same song can belong to multiple playlists) and is not treated as an error.
 - **Feature clipping:** Spotify-defined features bounded to [0, 1] (danceability, energy, speechiness, acousticness, instrumentalness, liveness, valence) are clipped to valid range. Extreme loudness and tempo values are flagged but kept.
 - **Outlier review:** IQR-based outlier counts are reported for all clustering features, but no rows are deleted based on outliers alone.
 - **Feature scaling:** StandardScaler is applied to audio features for clustering and recommendation.
@@ -42,10 +42,10 @@ The clustering analysis uses the following audio features: danceability, energy,
 The process:
 
 1. Standardizes the audio features using StandardScaler.
-2. Evaluates K-Means for k from 2 to 11 using inertia (elbow method) and silhouette score.
+2. Evaluates K-Means for k from 2 to 11 using inertia (elbow method) and silhouette score (computed on a fixed 5,000-song sample for speed, while KMeans is trained on the full dataset).
 3. Selects k=2 because it had the highest silhouette score among the tested values.
 4. Runs K-Means with k=2 and visualizes the result with PCA (2 components).
-5. Runs hierarchical clustering (AgglomerativeClustering, ward linkage) with k=2 and compares the two clusterings using adjusted Rand index.
+5. Runs hierarchical clustering (AgglomerativeClustering, ward linkage) as a supplementary comparison on a fixed 5,000-song sample — K-Means is the main method and runs on the full dataset. The adjusted Rand index is computed on that same sample.
 6. Analyzes cluster composition by playlist genre.
 7. Profiles cluster audio-feature means (standardized z-scores for comparability across features).
 
@@ -77,7 +77,7 @@ The system recommends songs based on similarity in the selected audio features. 
 - Best K-Means k: 2
 - Silhouette score: ~0.177
 - PCA visualization shows the two clusters projected onto the first two principal components
-- Hierarchical clustering (k=2) is compared with K-Means via adjusted Rand index. It uses a sparse k-NN connectivity graph (k=10) to avoid building the full O(n²) distance matrix, which would cause MemoryError on datasets of this size with unconstrained ward linkage.
+- Hierarchical clustering is a supplementary comparison performed on a fixed 5,000-song sample (K-Means is the main method and runs on the full dataset). It uses a sparse k-NN connectivity graph (k=10) to avoid the full O(n²) distance matrix, and the adjusted Rand index is computed on that same sample.
 - Cluster composition by playlist genre is analyzed
 
 **Recommendation examples:**

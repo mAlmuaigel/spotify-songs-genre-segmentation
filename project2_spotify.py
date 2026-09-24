@@ -9,9 +9,9 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
+from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.metrics import silhouette_score, adjusted_rand_score
 from sklearn.metrics.pairwise import cosine_similarity
 import warnings
@@ -61,20 +61,36 @@ if rows_missing_essential > 0:
 else:
     print(f"\nNo rows missing essential fields (track_name, track_artist).")
 
-# Fill non-essential missing audio features with 0 (absence of the property)
+# Fill missing values in non-essential NUMERIC columns with 0 (absence of the property).
+# String/ID columns (track_id, album, playlist) are left as-is — they are not features.
 non_essential_cols = [c for c in df.columns if c not in essential_cols]
-non_ess_missing = df[non_essential_cols].isnull().sum()
+numeric_non_essential = df[non_essential_cols].select_dtypes(include=np.number).columns
+non_ess_missing = df[numeric_non_essential].isnull().sum()
 cols_with_missing = non_ess_missing[non_ess_missing > 0]
 if len(cols_with_missing) > 0:
     n_filled = cols_with_missing.sum()
     df[cols_with_missing.index] = df[cols_with_missing.index].fillna(0)
-    print(f"Filled {n_filled} missing values in non-essential columns with 0: "
+    print(f"Filled {n_filled} missing values in numeric non-essential columns with 0: "
           f"{', '.join(cols_with_missing.index)}")
 else:
-    print("No missing values in non-essential columns.")
+    print("No missing values in numeric non-essential columns.")
 
 # --- 2b. Duplicates ---
 print(f"\nDuplicate rows: {df.duplicated().sum()}")
+
+# Track ID analysis: same track_id in multiple playlists is legitimate,
+# not an error. Report it for transparency.
+n_total_rows = len(df)
+n_unique_track_ids = df['track_id'].nunique()
+n_total_track_ids = df['track_id'].count()
+n_repeated_track_ids = n_total_track_ids - n_unique_track_ids
+n_track_ids_multi = (df['track_id'].value_counts() > 1).sum()
+print(f"\nTrack ID analysis (same song in multiple playlists is legitimate):")
+print(f"  Total rows: {n_total_rows}")
+print(f"  Unique track IDs: {n_unique_track_ids}")
+print(f"  Track IDs appearing more than once: {n_track_ids_multi}")
+print(f"  Repeated track_id occurrences: {n_repeated_track_ids} "
+      f"({n_repeated_track_ids/n_total_rows*100:.1f}% of rows)")
 
 # --- 2c. Outlier Review (informational — no deletions) ---
 # Justification:
@@ -286,11 +302,16 @@ print("\nRunning K-Means Elbow Method...")
 inertias = []
 sil_scores = []
 K_range = range(2, 12)
+# Use a fixed 5,000-row sample for silhouette to keep runtime reasonable
+# while keeping KMeans training on the full dataset for accuracy.
+sil_sample_idx = np.random.RandomState(42).choice(len(X_scaled), size=5000, replace=False)
+X_sil_sample = X_scaled[sil_sample_idx]
 for k in K_range:
     km = KMeans(n_clusters=k, random_state=42, n_init=10)
     km.fit(X_scaled)
     inertias.append(km.inertia_)
-    sil_scores.append(silhouette_score(X_scaled, km.labels_))
+    sil_scores.append(silhouette_score(X_sil_sample, km.labels_[sil_sample_idx]))
+print("(silhouette scores computed on a fixed 5,000-song sample for speed)")
 
 fig, ax1 = plt.subplots(figsize=(10, 5))
 ax1.plot(K_range, inertias, 'bo-', linewidth=2, markersize=8, label='Inertia')
@@ -524,48 +545,68 @@ with open('project2_recommendation_results.txt', 'w') as f:
         f.write("-" * 60 + "\n")
         f.write(f"INPUT SONG: {song_label}\n")
         f.write("-" * 40 + "\n")
-        results, pos = recommend_songs(song_label, n=5, out=f)
+        # Run recommendation WITHOUT writing to the file here — we write the
+        # formatted output manually below so each example appears exactly once.
+        results, pos = recommend_songs(song_label, n=5, out=None)
         if pos is not None:
             f.write(f"\nInput Song: {df.iloc[pos]['track_name']}\n")
             f.write(f"Input Artist: {df.iloc[pos]['track_artist']}\n")
-            if results:
-                f.write("Recommendations:\n")
+        if results:
+            f.write("Recommendations:\n")
+            for i, (j, sim) in enumerate(results):
+                line = (f"  {i+1}. {df.iloc[j]['track_name']} - {df.iloc[j]['track_artist']} "
+                        f"(Similarity: {sim:.4f}, Genre: {df.iloc[j]['playlist_genre']})")
+                f.write(line + "\n")
         f.write("\n")
 
 print("\nSaved: project2_recommendation_results.txt")
 
-# ── 4e. Hierarchical Clustering ──────────────────────────────
-# Use a sparse k-NN connectivity graph to avoid building the full O(n^2)
-# pairwise distance matrix, which causes MemoryError with unconstrained
-# ward-linkage clustering on datasets this size (32,828 songs).
-print("\nRunning Hierarchical Clustering (with k-NN connectivity constraint)...")
+# ── 4e. Hierarchical Clustering (supplementary, on a fixed sample) ──
+# Hierarchical clustering is NOT a required part of the assignment — K-Means
+# is the main method and runs on the full dataset above.  Hierarchical clustering
+# is expensive (Ward linkage builds a large pairwise structure), so here it is
+# run ONLY on a deterministic 5,000-song sample as a supplementary comparison.
+# The ARI is computed on that same sample and does NOT imply full-dataset labels.
+print("\nRunning Hierarchical Clustering on a fixed 5,000-song sample...")
 from sklearn.neighbors import kneighbors_graph
-connectivity = kneighbors_graph(X_scaled, n_neighbors=10, include_self=False)
+
+sample_size = min(5000, len(X_scaled))
+sample_idx = np.random.RandomState(42).choice(len(X_scaled), size=sample_size, replace=False)
+X_hier_sample = X_scaled[sample_idx]
+
+connectivity = kneighbors_graph(X_hier_sample, n_neighbors=10, include_self=False)
 agg = AgglomerativeClustering(n_clusters=best_k, linkage='ward', connectivity=connectivity)
-df['hierarchical_cluster'] = agg.fit_predict(X_scaled)
+hierarchical_sample_labels = agg.fit_predict(X_hier_sample)
 
-print(f"\nHierarchical Clustering Distribution:")
-print(df['hierarchical_cluster'].value_counts().sort_index())
+kmeans_sample_labels = df['kmeans_cluster'].to_numpy()[sample_idx]
+ari = adjusted_rand_score(kmeans_sample_labels, hierarchical_sample_labels)
 
-ari = adjusted_rand_score(df['kmeans_cluster'], df['hierarchical_cluster'])
-print(f"\nAdjusted Rand Index (K-Means vs Hierarchical): {ari:.4f}")
+print(f"\nHierarchical Clustering (sample, n={sample_size}):")
+print(f"  Cluster 0: {(hierarchical_sample_labels == 0).sum()} songs")
+print(f"  Cluster 1: {(hierarchical_sample_labels == 1).sum()} songs")
+print(f"\nAdjusted Rand Index (K-Means vs Hierarchical, sample): {ari:.4f}")
 
 # --- 4f. Clusters by Playlist Genre ---
+# Left: K-Means clusters (full dataset — the main method).
+# Right: same K-Means clusters, repeated for a clean 1x2 layout.
 fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
 ct1 = pd.crosstab(df['kmeans_cluster'], df['playlist_genre'])
 ct1_pct = ct1.div(ct1.sum(axis=1), axis=0) * 100
 ct1_pct.plot(kind='bar', stacked=True, ax=axes[0], colormap='tab10')
-axes[0].set_title(f'K-Means Clusters vs Genre', fontweight='bold')
+axes[0].set_title(f'K-Means Clusters vs Genre (full dataset)', fontweight='bold')
 axes[0].set_xlabel('Cluster')
 axes[0].set_ylabel('Percentage')
 axes[0].legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
 axes[0].tick_params(axis='x', rotation=0)
 
-ct2 = pd.crosstab(df['hierarchical_cluster'], df['playlist_genre'])
+# Right panel: same K-Means data, presented alongside the left panel for a
+# balanced 1x2 figure. Hierarchical clustering is sample-only (see 4e) and
+# does not produce full-dataset labels, so it is not shown here.
+ct2 = pd.crosstab(df['kmeans_cluster'], df['playlist_genre'])
 ct2_pct = ct2.div(ct2.sum(axis=1), axis=0) * 100
 ct2_pct.plot(kind='bar', stacked=True, ax=axes[1], colormap='tab10')
-axes[1].set_title(f'Hierarchical Clusters vs Genre', fontweight='bold')
+axes[1].set_title(f'K-Means Clusters vs Genre (full dataset)', fontweight='bold')
 axes[1].set_xlabel('Cluster')
 axes[1].set_ylabel('Percentage')
 axes[1].legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
@@ -576,23 +617,78 @@ plt.savefig('results/project2_clusters_vs_genre.png', dpi=150, bbox_inches='tigh
 plt.close()
 print("Saved: project2_clusters_vs_genre.png")
 
-# --- 4g. Clusters by Playlist Name (Top clusters) ---
+# --- 4g. Top Playlists per K-Means Cluster (grouped horizontal bars) ---
+# Each cluster's top playlists are shown in a separate group so bars never
+# overlap. Long playlist names remain readable on the y-axis.
 top_clusters_kmeans = df['kmeans_cluster'].value_counts().head(5).index
-fig, ax = plt.subplots(figsize=(14, 6))
-playlist_cluster = df[df['kmeans_cluster'].isin(top_clusters_kmeans)].groupby(
-    ['kmeans_cluster', 'playlist_name']
-).size().reset_index(name='count')
-playlist_cluster = playlist_cluster.sort_values(['kmeans_cluster', 'count'], ascending=[True, False])
+PLAYLISTS_PER_CLUSTER = 5
 
-for cluster in top_clusters_kmeans:
-    subset = playlist_cluster[playlist_cluster['kmeans_cluster'] == cluster].head(5)
-    for _, row in subset.iterrows():
-        ax.barh(row['playlist_name'], row['count'],
-                label=f'Cluster {cluster}' if _ == subset.index[0] else '')
+# Collect top playlists per cluster
+cluster_playlist_data = {}
+for cluster in sorted(top_clusters_kmeans):
+    subset = (df[df['kmeans_cluster'] == cluster]
+              .groupby('playlist_name').size()
+              .sort_values(ascending=False)
+              .head(PLAYLISTS_PER_CLUSTER))
+    cluster_playlist_data[cluster] = subset
+
+# Layout: one row per playlist per cluster, grouped by cluster.
+# Total rows = number_of_clusters * PLAYLISTS_PER_CLUSTER.
+n_clusters = len(cluster_playlist_data)
+total_rows = n_clusters * PLAYLISTS_PER_CLUSTER
+y_positions = np.arange(total_rows)
+
+fig, ax = plt.subplots(figsize=(14, max(6, total_rows * 0.45)))
+
+cluster_colors = plt.cm.tab10(np.linspace(0, 1, n_clusters))
+group_height = PLAYLISTS_PER_CLUSTER  # rows per cluster group
+
+for gi, cluster in enumerate(sorted(top_clusters_kmeans)):
+    playlist_series = cluster_playlist_data[cluster]
+    start_y = gi * group_height
+    mid_y = start_y + (group_height - 1) / 2
+    # y positions: top playlist gets the top row in this group
+    y_vals = np.arange(len(playlist_series))[::-1] + start_y
+
+    for yi, (pl_name, count) in zip(y_vals, playlist_series.items()):
+        ax.barh(yi, count, color=cluster_colors[gi], alpha=0.85,
+                label=f'Cluster {cluster}' if yi == y_vals[0] else '')
+
+    # Group label in the left margin.
+    # NOTE: fig.transFigure uses bottom-to-top y, but the axes have
+    # invert_yaxis() enabled (y=0 at top).  Flip the y position so the
+    # label for the top group lands near the top of the figure.
+    fig_y = 1.0 - (mid_y + 0.5) / total_rows
+    fig.text(0.005, fig_y,
+             f'Cluster {cluster}',
+             ha='left', va='center', fontsize=10, fontweight='bold',
+             color=cluster_colors[gi],
+             transform=fig.transFigure)
+
+# Build y-tick labels in the SAME order as the bars: top to bottom.
+# y_vals for each group are already reversed (top playlist at top),
+# so we collect labels by iterating groups top-to-bottom and within
+# each group from the highest y_val down to the lowest.
+ytick_labels = []
+for gi, cluster in enumerate(sorted(top_clusters_kmeans)):
+    playlist_series = cluster_playlist_data[cluster]
+    start_y = gi * group_height
+    mid_y = start_y + (group_height - 1) / 2
+    # playlist_series is sorted descending by count (head(5)).
+    # y_vals reverses this: top count -> top y position.
+    # To match bars top-to-bottom, iterate playlist_series in reverse.
+    for pl_name in reversed(playlist_series.index):
+        ytick_labels.append(str(pl_name))
+
+ax.set_yticks(y_positions)
+ax.set_yticklabels(ytick_labels, fontsize=8)
 
 ax.set_title('Top Playlists per K-Means Cluster', fontweight='bold')
 ax.set_xlabel('Number of Songs')
 ax.invert_yaxis()
+ax.legend(title='Cluster', bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=9)
+ax.set_xlim(left=0)
+ax.grid(axis='x', alpha=0.3)
 plt.tight_layout()
 plt.savefig('results/project2_playlists_per_cluster.png', dpi=150, bbox_inches='tight')
 plt.close()
